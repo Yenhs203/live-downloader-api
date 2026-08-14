@@ -1,0 +1,24 @@
+# Local development infrastructure only.
+# Spring Boot runs from the IDE against this PostgreSQL instance.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: live-downloader-postgres
+    environment:
+      POSTGRES_DB: live_downloader
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - live_downloader_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d live_downloader"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  live_downloader_pgdata:

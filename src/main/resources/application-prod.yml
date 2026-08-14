@@ -1,0 +1,127 @@
+spring:
+  datasource:
+    # Production credentials must come from the environment — never commit secrets.
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      pool-name: live-downloader-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT_MS:300000}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:20000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME_MS:1200000}
+      # Fail fast if PostgreSQL is unreachable at startup.
+      initialization-fail-timeout: ${DB_POOL_INIT_FAIL_TIMEOUT_MS:1}
+  jpa:
+    show-sql: false
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    out-of-order: false
+  # Do not expose OpenAPI / Swagger UI in production.
+  data:
+    web:
+      pageable:
+        max-page-size: ${API_MAX_PAGE_SIZE:100}
+        default-page-size: 20
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+  tomcat:
+    # API accepts small JSON bodies only (stream URLs), not uploads.
+    max-http-form-post-size: 65536
+    max-swallow-size: 65536
+    connection-timeout: 20s
+    threads:
+      max: ${SERVER_TOMCAT_MAX_THREADS:50}
+      min-spare: ${SERVER_TOMCAT_MIN_SPARE:5}
+
+spring.lifecycle:
+  # Must cover graceful FFmpeg stop (+ destroy grace) for active recordings.
+  timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:45s}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        # Keep the surface minimal. Protect /actuator at the reverse proxy.
+        include: health,info
+  endpoint:
+    health:
+      # Never leak datasource/disk details publicly.
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+      path: ${RECORDINGS_DIRECTORY:/var/lib/live-downloader/recordings}
+      # Warn/fail readiness when free space drops below this threshold (bytes).
+      threshold: ${DISK_SPACE_THRESHOLD_BYTES:1073741824}
+  info:
+    env:
+      enabled: false
+
+info:
+  app:
+    name: VH MEDIA LIVE DOWNLOADER
+    description: Livestream recording service
+
+app:
+  cors:
+    # Required — comma-separated concrete origins, never "*".
+    # Example: APP_CORS_ALLOWED_ORIGINS=https://app.example.com
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+  media:
+    ffmpeg-path: ${FFMPEG_PATH:/usr/bin/ffmpeg}
+    ffprobe-path: ${FFPROBE_PATH:/usr/bin/ffprobe}
+    recordings-directory: ${RECORDINGS_DIRECTORY:/var/lib/live-downloader/recordings}
+    max-concurrent-recordings: ${MAX_CONCURRENT_RECORDINGS:5}
+    probe-timeout-seconds: ${PROBE_TIMEOUT_SECONDS:30}
+    stop-timeout-seconds: ${STOP_TIMEOUT_SECONDS:20}
+    delete-temp-after-remux: ${DELETE_TEMP_AFTER_REMUX:true}
+    progress-persist-interval-seconds: ${PROGRESS_PERSIST_INTERVAL_SECONDS:3}
+    sse-timeout-seconds: ${SSE_TIMEOUT_SECONDS:1800}
+    # Refuse to start if the recordings volume has less free space than this.
+    min-free-disk-bytes: ${MIN_FREE_DISK_BYTES:1073741824}
+    validate-executables-on-startup: ${VALIDATE_MEDIA_EXECUTABLES:true}
+  security:
+    # Block RFC1918 / loopback / link-local stream hosts when the API is public.
+    block-private-stream-addresses: ${BLOCK_PRIVATE_STREAM_ADDRESSES:true}
+    security-headers-enabled: ${SECURITY_HEADERS_ENABLED:true}
+
+logging:
+  level:
+    root: WARN
+    com.vhmedia.livedownloader: INFO
+    org.springframework.web: WARN
+    org.hibernate.SQL: WARN
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n"

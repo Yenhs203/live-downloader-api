@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    # Matches local docker-compose.yml (postgres / postgres / live_downloader).
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:live_downloader}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  # Avoid clashing with other local apps that already bind 8080.
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:4200
+  media:
+    recordings-directory: ./recordings-dev
+    max-concurrent-recordings: 2
+    probe-timeout-seconds: 30
+    stop-timeout-seconds: 15
+    delete-temp-after-remux: true
+    progress-persist-interval-seconds: 3
+    sse-timeout-seconds: 1800
+    min-free-disk-bytes: 0
+    validate-executables-on-startup: false
+  security:
+    block-private-stream-addresses: false
+    security-headers-enabled: true
+
+logging:
+  level:
+    com.vhmedia.livedownloader: DEBUG
+    org.hibernate.SQL: DEBUG

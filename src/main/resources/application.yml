@@ -1,0 +1,102 @@
+spring:
+  application:
+    name: vh-media-live-downloader
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:live_downloader}
+    # Credentials come from the active profile or environment (never hardcode production secrets here).
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: live-downloader-pool
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1200000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+        default-page-size: 20
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+      path: ${RECORDINGS_DIRECTORY:./recordings}
+      threshold: ${DISK_SPACE_THRESHOLD_BYTES:536870912}
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: VH MEDIA LIVE DOWNLOADER
+    description: Livestream recording service
+
+app:
+  cors:
+    # Comma-separated list when set via APP_CORS_ALLOWED_ORIGINS. Never use "*".
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
+  media:
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    ffprobe-path: ${FFPROBE_PATH:ffprobe}
+    recordings-directory: ${RECORDINGS_DIRECTORY:./recordings}
+    max-concurrent-recordings: ${MAX_CONCURRENT_RECORDINGS:3}
+    probe-timeout-seconds: ${PROBE_TIMEOUT_SECONDS:30}
+    stop-timeout-seconds: ${STOP_TIMEOUT_SECONDS:15}
+    delete-temp-after-remux: ${DELETE_TEMP_AFTER_REMUX:true}
+    progress-persist-interval-seconds: ${PROGRESS_PERSIST_INTERVAL_SECONDS:3}
+    sse-timeout-seconds: ${SSE_TIMEOUT_SECONDS:1800}
+    min-free-disk-bytes: ${MIN_FREE_DISK_BYTES:536870912}
+    validate-executables-on-startup: ${VALIDATE_MEDIA_EXECUTABLES:false}
+    http-browser-headers-enabled: ${HTTP_BROWSER_HEADERS_ENABLED:true}
+    http-user-agent: ${HTTP_USER_AGENT:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139 Safari/537.36}
+    http-referer: ${HTTP_REFERER:https://www.tiktok.com/}
+  security:
+    block-private-stream-addresses: ${BLOCK_PRIVATE_STREAM_ADDRESSES:false}
+    security-headers-enabled: ${SECURITY_HEADERS_ENABLED:true}
+
+logging:
+  level:
+    root: INFO
+    com.vhmedia.livedownloader: INFO

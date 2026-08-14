@@ -1,0 +1,35 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:4200
+  media:
+    ffmpeg-path: ffmpeg
+    ffprobe-path: ffprobe
+    recordings-directory: ./target/recordings-test
+    max-concurrent-recordings: 2
+    probe-timeout-seconds: 10
+    stop-timeout-seconds: 5
+    delete-temp-after-remux: true
+    progress-persist-interval-seconds: 3
+    sse-timeout-seconds: 60
+    min-free-disk-bytes: 0
+    validate-executables-on-startup: false
+  security:
+    block-private-stream-addresses: false
+    security-headers-enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.vhmedia.livedownloader: INFO
