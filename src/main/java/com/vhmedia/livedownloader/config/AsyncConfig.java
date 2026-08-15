@@ -35,4 +35,19 @@ public class AsyncConfig {
 		executor.initialize();
 		return new RemuxTaskExecutor(executor);
 	}
+
+	@Bean
+	EditorTaskExecutor editorTaskExecutor(EditorProperties editorProperties) {
+		int poolSize = Math.max(1, editorProperties.getMaxConcurrentExports());
+		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+		executor.setThreadNamePrefix("editor-");
+		executor.setCorePoolSize(poolSize);
+		executor.setMaxPoolSize(poolSize);
+		// No queue: extra exports are rejected immediately (HTTP 429), same as recordings.
+		executor.setQueueCapacity(0);
+		executor.setWaitForTasksToCompleteOnShutdown(true);
+		executor.setAwaitTerminationSeconds(60);
+		executor.initialize();
+		return new EditorTaskExecutor(executor);
+	}
 }

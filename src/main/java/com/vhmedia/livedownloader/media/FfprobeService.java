@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -52,6 +54,26 @@ public class FfprobeService {
 				mediaProperties.isHttpBrowserHeadersEnabled()
 		);
 
+		return runFfprobe(command, redactedUrl);
+	}
+
+	/**
+	 * Probes a local media file. Does not send HTTP browser headers.
+	 */
+	public StreamProbeResult probeLocalFile(Path file) {
+		if (file == null) {
+			throw new StreamProbeException("Media file path must not be null");
+		}
+		if (!Files.isRegularFile(file)) {
+			throw new StreamProbeException("Media file does not exist: " + file.getFileName());
+		}
+		String label = file.getFileName().toString();
+		List<String> command = buildLocalFileCommand(file);
+		log.info("Probing local file with ffprobe file={}", label);
+		return runFfprobe(command, label);
+	}
+
+	private StreamProbeResult runFfprobe(List<String> command, String logLabel) {
 		Process process = null;
 		try {
 			ProcessBuilder processBuilder = new ProcessBuilder(command);
@@ -69,10 +91,10 @@ public class FfprobeService {
 				awaitQuietly(stdoutFuture);
 				String sanitizedDetail = truncate(UrlRedactor.redactInText(firstNonBlank(stderr, null)), 500);
 				log.warn(
-						"ffprobe timed out category={} after {}s url={} detail={}",
+						"ffprobe timed out category={} after {}s label={} detail={}",
 						MediaHttpFailureKind.TIMEOUT,
 						mediaProperties.getProbeTimeoutSeconds(),
-						redactedUrl,
+						logLabel,
 						sanitizedDetail
 				);
 				throw new StreamProbeTimeoutException(
@@ -89,10 +111,10 @@ public class FfprobeService {
 				String sanitizedDetail = truncate(UrlRedactor.redactInText(detail), 500);
 				MediaHttpFailureKind category = MediaHttpFailureClassifier.classify(detail, null);
 				log.warn(
-						"ffprobe failed category={} exitCode={} url={} detail={}",
+						"ffprobe failed category={} exitCode={} label={} detail={}",
 						category,
 						exitCode,
-						redactedUrl,
+						logLabel,
 						sanitizedDetail
 				);
 				throw new StreamProbeException(buildFailureMessage(exitCode, detail));
@@ -100,14 +122,15 @@ public class FfprobeService {
 
 			StreamProbeResult result = streamProbeParser.parse(stdout);
 			log.info(
-					"ffprobe success url={} format={} video={} audio={} {}x{} fps={}",
-					redactedUrl,
+					"ffprobe success label={} format={} video={} audio={} {}x{} fps={} durationMs={}",
+					logLabel,
 					result.getFormatName(),
 					result.getVideoCodec(),
 					result.getAudioCodec(),
 					result.getWidth(),
 					result.getHeight(),
-					result.getFps()
+					result.getFps(),
+					result.getDurationMillis()
 			);
 			return result;
 		} catch (StreamProbeException ex) {
@@ -115,9 +138,9 @@ public class FfprobeService {
 		} catch (IOException ex) {
 			MediaHttpFailureKind category = MediaHttpFailureClassifier.classifyStartFailure(ex);
 			log.error(
-					"Failed to start ffprobe category={} url={} detail={}",
+					"Failed to start ffprobe category={} label={} detail={}",
 					category,
-					redactedUrl,
+					logLabel,
 					truncate(UrlRedactor.redactInText(ex.getMessage()), 500),
 					ex
 			);
@@ -147,6 +170,19 @@ public class FfprobeService {
 		command.add("json");
 		MediaHttpRequestArgs.appendBrowserCompatibleHttpArgs(command, mediaProperties);
 		command.add(streamUrl);
+		return command;
+	}
+
+	List<String> buildLocalFileCommand(Path file) {
+		List<String> command = new ArrayList<>();
+		command.add(mediaProperties.getFfprobePath());
+		command.add("-v");
+		command.add("error");
+		command.add("-show_streams");
+		command.add("-show_format");
+		command.add("-of");
+		command.add("json");
+		command.add(file.toAbsolutePath().toString());
 		return command;
 	}
 

@@ -25,6 +25,13 @@ app:
     sse-timeout-seconds: 60
     min-free-disk-bytes: 0
     validate-executables-on-startup: false
+  editor:
+    storage-directory: ${EDITOR_STORAGE_DIRECTORY:./target/recordings-test/editor}
+    max-concurrent-exports: 1
+    max-upload-bytes: 10485760
+    max-image-upload-bytes: 1048576
+    delete-temp-after-export: true
+    preview-enabled: false
   security:
     block-private-stream-addresses: false
     security-headers-enabled: true

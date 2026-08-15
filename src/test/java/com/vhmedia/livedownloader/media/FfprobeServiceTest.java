@@ -83,4 +83,14 @@ class FfprobeServiceTest {
 		assertThat(command.getLast()).isEqualTo(url);
 		assertThat(command.getLast()).contains("sign=%2Fabc%3D");
 	}
+
+	@Test
+	void buildLocalFileCommandOmitsHttpHeaders() {
+		java.nio.file.Path file = java.nio.file.Path.of("C:/tmp/source.mp4");
+		List<String> command = ffprobeService.buildLocalFileCommand(file);
+		assertThat(command).startsWith("ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json");
+		assertThat(command).doesNotContain("-user_agent");
+		assertThat(command).doesNotContain("-headers");
+		assertThat(command.getLast()).isEqualTo(file.toAbsolutePath().toString());
+	}
 }

@@ -32,6 +32,7 @@ public class StreamProbeParser {
 
 		JsonNode formatNode = root.path("format");
 		String formatName = textOrNull(formatNode, "format_name");
+		Long durationMillis = parseDurationMillis(textOrNull(formatNode, "duration"));
 
 		boolean hasVideo = false;
 		boolean hasAudio = false;
@@ -42,6 +43,8 @@ public class StreamProbeParser {
 		String audioCodec = null;
 		Integer audioSampleRate = null;
 		Integer audioChannels = null;
+		Long videoDurationMillis = null;
+		Long audioDurationMillis = null;
 
 		JsonNode streams = root.path("streams");
 		if (streams.isArray()) {
@@ -56,11 +59,13 @@ public class StreamProbeParser {
 					if (fps == null) {
 						fps = parseFrameRate(textOrNull(stream, "r_frame_rate"));
 					}
+					videoDurationMillis = durationFromStream(stream);
 				} else if ("audio".equalsIgnoreCase(codecType) && !hasAudio) {
 					hasAudio = true;
 					audioCodec = textOrNull(stream, "codec_name");
 					audioSampleRate = intOrNull(stream, "sample_rate");
 					audioChannels = intOrNull(stream, "channels");
+					audioDurationMillis = durationFromStream(stream);
 				}
 			}
 		}
@@ -76,7 +81,53 @@ public class StreamProbeParser {
 				.audioCodec(audioCodec)
 				.audioSampleRate(audioSampleRate)
 				.audioChannels(audioChannels)
+				.durationMillis(durationMillis)
+				.videoDurationMillis(videoDurationMillis)
+				.audioDurationMillis(audioDurationMillis)
 				.build();
+	}
+
+	static Long durationFromStream(JsonNode stream) {
+		Long millis = parseDurationMillis(textOrNull(stream, "duration"));
+		if (millis != null) {
+			return millis;
+		}
+		JsonNode tags = stream.path("tags");
+		millis = parseDurationMillis(textOrNull(tags, "DURATION"));
+		if (millis != null) {
+			return millis;
+		}
+		return parseDurationMillis(textOrNull(tags, "duration"));
+	}
+
+	static Long parseDurationMillis(String seconds) {
+		if (seconds == null || seconds.isBlank() || "N/A".equalsIgnoreCase(seconds)) {
+			return null;
+		}
+		String trimmed = seconds.trim();
+		try {
+			if (trimmed.indexOf(':') > 0) {
+				String[] parts = trimmed.split(":");
+				if (parts.length != 3) {
+					return null;
+				}
+				double hours = Double.parseDouble(parts[0].trim());
+				double minutes = Double.parseDouble(parts[1].trim());
+				double secs = Double.parseDouble(parts[2].trim());
+				double value = hours * 3600.0d + minutes * 60.0d + secs;
+				if (value < 0.0d || !Double.isFinite(value)) {
+					return null;
+				}
+				return Math.round(value * 1000.0d);
+			}
+			double value = Double.parseDouble(trimmed);
+			if (value < 0.0d || !Double.isFinite(value)) {
+				return null;
+			}
+			return Math.round(value * 1000.0d);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
 	}
 
 	static Double parseFrameRate(String rate) {

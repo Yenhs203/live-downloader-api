@@ -38,14 +38,20 @@ public class WebConfig implements WebMvcConfigurer {
 
 		registry.addMapping("/api/**")
 				.allowedOrigins(origins.toArray(String[]::new))
-				.allowedMethods("GET", "POST", "DELETE", "OPTIONS")
+				.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
 				.allowedHeaders(
 						"Authorization",
 						"Content-Type",
 						"Accept",
 						"Origin",
-						"X-Requested-With")
-				.exposedHeaders("Content-Disposition", "Content-Length", "Content-Type")
+						"X-Requested-With",
+						"Range")
+				.exposedHeaders(
+						"Content-Disposition",
+						"Content-Length",
+						"Content-Type",
+						"Accept-Ranges",
+						"Content-Range")
 				.allowCredentials(true)
 				.maxAge(3600);
 	}

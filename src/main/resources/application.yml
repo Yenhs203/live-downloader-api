@@ -34,13 +34,30 @@ spring:
       pageable:
         max-page-size: 100
         default-page-size: 20
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
+      max-request-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
 
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  tomcat:
+    max-http-form-post-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
+    max-swallow-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
 
 spring.lifecycle:
   timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+
+springdoc:
+  swagger-ui:
+    tags-sorter: alpha
+    operations-sorter: method
+    doc-expansion: none
+    display-request-duration: true
+  default-produces-media-type: application/json
+  show-actuator: false
 
 management:
   endpoints:
@@ -92,6 +109,32 @@ app:
     http-browser-headers-enabled: ${HTTP_BROWSER_HEADERS_ENABLED:true}
     http-user-agent: ${HTTP_USER_AGENT:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139 Safari/537.36}
     http-referer: ${HTTP_REFERER:https://www.tiktok.com/}
+  editor:
+    storage-directory: ${EDITOR_STORAGE_DIRECTORY:}
+    max-upload-bytes: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
+    max-image-upload-bytes: ${EDITOR_MAX_IMAGE_UPLOAD_BYTES:${EDITOR_MAX_ASSET_BYTES:20971520}}
+    max-concurrent-exports: ${MAX_CONCURRENT_EDITOR_EXPORTS:${EDITOR_MAX_CONCURRENT_EXPORTS:${EDITOR_MAX_CONCURRENT_RENDERS:2}}}
+    export-timeout-minutes: ${EDITOR_EXPORT_TIMEOUT_MINUTES:${EDITOR_RENDER_TIMEOUT_MINUTES:60}}
+    max-segments: ${EDITOR_MAX_SEGMENTS:50}
+    min-segment-millis: ${EDITOR_MIN_SEGMENT_DURATION_MS:${EDITOR_MIN_SEGMENT_MILLIS:100}}
+    coverage-epsilon-millis: ${EDITOR_COVERAGE_EPSILON_MILLIS:50}
+    image-segments-enabled: ${EDITOR_IMAGE_SEGMENTS_ENABLED:false}
+    max-assets-per-project: ${EDITOR_MAX_ASSETS_PER_PROJECT:30}
+    encode-quality:
+      fast:
+        preset: ${EDITOR_QUALITY_FAST_PRESET:veryfast}
+        crf: ${EDITOR_QUALITY_FAST_CRF:26}
+      balanced:
+        preset: ${EDITOR_QUALITY_BALANCED_PRESET:${EDITOR_VIDEO_PRESET:medium}}
+        crf: ${EDITOR_QUALITY_BALANCED_CRF:${EDITOR_VIDEO_CRF:23}}
+      high:
+        preset: ${EDITOR_QUALITY_HIGH_PRESET:slow}
+        crf: ${EDITOR_QUALITY_HIGH_CRF:20}
+    delete-temp-after-export: ${EDITOR_DELETE_TEMP_AFTER_EXPORT:true}
+    min-free-disk-bytes: ${EDITOR_MIN_FREE_DISK_BYTES:0}
+    preview-enabled: ${EDITOR_PREVIEW_ENABLED:false}
+    preview-max-width: ${EDITOR_PREVIEW_MAX_WIDTH:1280}
+    preview-max-duration-millis: ${EDITOR_PREVIEW_MAX_DURATION_MILLIS:0}
   security:
     block-private-stream-addresses: ${BLOCK_PRIVATE_STREAM_ADDRESSES:false}
     security-headers-enabled: ${SECURITY_HEADERS_ENABLED:true}

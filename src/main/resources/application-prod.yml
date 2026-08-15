@@ -40,9 +40,9 @@ server:
     include-stacktrace: never
     include-exception: false
   tomcat:
-    # API accepts small JSON bodies only (stream URLs), not uploads.
-    max-http-form-post-size: 65536
-    max-swallow-size: 65536
+    # Multipart MP4 uploads for the editor; JSON recording requests stay small in practice.
+    max-http-form-post-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
+    max-swallow-size: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
     connection-timeout: 20s
     threads:
       max: ${SERVER_TOMCAT_MAX_THREADS:50}
@@ -111,6 +111,29 @@ app:
     # Refuse to start if the recordings volume has less free space than this.
     min-free-disk-bytes: ${MIN_FREE_DISK_BYTES:1073741824}
     validate-executables-on-startup: ${VALIDATE_MEDIA_EXECUTABLES:true}
+  editor:
+    storage-directory: ${EDITOR_STORAGE_DIRECTORY:/var/lib/live-downloader/editor}
+    max-upload-bytes: ${EDITOR_MAX_UPLOAD_BYTES:536870912}
+    max-image-upload-bytes: ${EDITOR_MAX_IMAGE_UPLOAD_BYTES:${EDITOR_MAX_ASSET_BYTES:20971520}}
+    max-concurrent-exports: ${MAX_CONCURRENT_EDITOR_EXPORTS:${EDITOR_MAX_CONCURRENT_EXPORTS:${EDITOR_MAX_CONCURRENT_RENDERS:2}}}
+    export-timeout-minutes: ${EDITOR_EXPORT_TIMEOUT_MINUTES:${EDITOR_RENDER_TIMEOUT_MINUTES:60}}
+    max-segments: ${EDITOR_MAX_SEGMENTS:50}
+    min-segment-millis: ${EDITOR_MIN_SEGMENT_DURATION_MS:${EDITOR_MIN_SEGMENT_MILLIS:100}}
+    coverage-epsilon-millis: ${EDITOR_COVERAGE_EPSILON_MILLIS:50}
+    encode-quality:
+      fast:
+        preset: ${EDITOR_QUALITY_FAST_PRESET:veryfast}
+        crf: ${EDITOR_QUALITY_FAST_CRF:26}
+      balanced:
+        preset: ${EDITOR_QUALITY_BALANCED_PRESET:${EDITOR_VIDEO_PRESET:medium}}
+        crf: ${EDITOR_QUALITY_BALANCED_CRF:${EDITOR_VIDEO_CRF:23}}
+      high:
+        preset: ${EDITOR_QUALITY_HIGH_PRESET:slow}
+        crf: ${EDITOR_QUALITY_HIGH_CRF:20}
+    delete-temp-after-export: ${EDITOR_DELETE_TEMP_AFTER_EXPORT:true}
+    min-free-disk-bytes: ${EDITOR_MIN_FREE_DISK_BYTES:0}
+    preview-enabled: ${EDITOR_PREVIEW_ENABLED:false}
+    preview-max-width: ${EDITOR_PREVIEW_MAX_WIDTH:1280}
   security:
     # Block RFC1918 / loopback / link-local stream hosts when the API is public.
     block-private-stream-addresses: ${BLOCK_PRIVATE_STREAM_ADDRESSES:true}

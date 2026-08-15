@@ -68,4 +68,48 @@ class FfmpegProgressParserTest {
 		assertThat(FfmpegProgressParser.acceptLine(block, "not-a-property")).isEmpty();
 		assertThat(block).isEmpty();
 	}
+
+	@Test
+	void fallsBackToOutTimeClockWhenUsIsMissing() {
+		Map<String, String> properties = new LinkedHashMap<>();
+		properties.put("out_time_us", "N/A");
+		properties.put("out_time", "00:00:23.000000");
+		properties.put("progress", "continue");
+
+		RecordingProgress progress = FfmpegProgressParser.parseBlock(properties);
+
+		assertThat(progress.getOutTimeMs()).isEqualTo(23_000L);
+	}
+
+	@Test
+	void treatsHugeOutTimeMsAsMicroseconds() {
+		Map<String, String> properties = new LinkedHashMap<>();
+		properties.put("out_time_ms", "86400000");
+		properties.put("progress", "continue");
+
+		RecordingProgress progress = FfmpegProgressParser.parseBlock(properties);
+
+		assertThat(progress.getOutTimeMs()).isEqualTo(86_400L);
+	}
+
+	@Test
+	void ignoresNaOutTimeValues() {
+		Map<String, String> properties = new LinkedHashMap<>();
+		properties.put("out_time_us", "N/A");
+		properties.put("out_time_ms", "N/A");
+		properties.put("out_time", "N/A");
+		properties.put("progress", "continue");
+
+		RecordingProgress progress = FfmpegProgressParser.parseBlock(properties);
+
+		assertThat(progress.getOutTimeMs()).isNull();
+	}
+
+	@Test
+	void parsesSpeedFactorFromFfmpegSuffix() {
+		assertThat(FfmpegProgressParser.parseSpeed("1.7x")).isEqualTo(1.7d);
+		assertThat(FfmpegProgressParser.parseSpeed("1.01x")).isEqualTo(1.01d);
+		assertThat(FfmpegProgressParser.parseSpeed("N/A")).isNull();
+		assertThat(FfmpegProgressParser.parseSpeed(null)).isNull();
+	}
 }

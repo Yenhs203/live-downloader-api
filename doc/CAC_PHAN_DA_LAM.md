@@ -1,7 +1,8 @@
 # VH MEDIA LIVE DOWNLOADER — Tài liệu các phần đã làm
 
 Tài liệu mô tả phạm vi backend đã triển khai trong repository này.  
-Chi tiết chạy local xem [README.md](../README.md); triển khai production xem [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+Chi tiết chạy local xem [README.md](../README.md); triển khai production xem [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).  
+Nhật ký ngày 14/08/2026 (prompt Video Editor mục 1–36): [2026-08-14-VIDEO-EDITOR-V1.md](./2026-08-14-VIDEO-EDITOR-V1.md).
 
 ---
 
@@ -12,7 +13,8 @@ Spring Boot service ghi livestream từ **URL stream trực tiếp** (HTTP/HTTPS
 | Đã làm | Chưa làm (ngoài scope) |
 |---|---|
 | Probe + record URL người dùng cung cấp | Tự lấy / refresh URL TikTok (hay platform khác) |
-| API REST + Swagger | UI Angular (repo riêng / chưa có trong backend này) |
+| API REST + Swagger (group Video Editor) | UI Angular (repo riêng / chưa có trong backend này) |
+| Editor V1: upload, split, reorder visual, trim, speed, export H.264, audio locked | Delete-with-padding, duplicate-with-trim, transition, overlay, BGM |
 | PostgreSQL + Flyway | Dockerize FFmpeg |
 
 ---
@@ -36,15 +38,20 @@ Spring Boot service ghi livestream từ **URL stream trực tiếp** (HTTP/HTTPS
 Client (Swagger / UI)
         │
         ▼
-Controllers (probe, recordings, health)
+Controllers (probe, recordings, editor, health)
         │
         ├── StreamProbeService ──► FfprobeService
         ├── RecordingJobService ──► create / list / get / delete
         ├── RecordingLifecycleService ──► stop / remux / complete / fail
         ├── FfmpegRecordingService ──► ghi .ts
         ├── FfmpegRemuxService ──► .ts → .mp4
-        ├── RecordingEventHub ──► SSE
-        └── LiveDownloadJob (PostgreSQL)
+        ├── RecordingEventHub ──► SSE recording
+        ├── VideoEditorService ──► upload / import / get / delete
+        ├── EditorTimelineService ──► split / merge / boundary / reorder
+        ├── VideoEditorRenderService ──► export job + status
+        ├── FfmpegVisualReorderService ──► trim/setpts/concat visual, map original audio
+        ├── EditorEventHub ──► SSE export
+        └── PostgreSQL (live_download_job, video_project, video_asset, video_segment, video_export_job)
 ```
 
 Package chính: `com.vhmedia.livedownloader`
@@ -52,11 +59,12 @@ Package chính: `com.vhmedia.livedownloader`
 | Nhóm | Vai trò |
 |---|---|
 | `controller` | REST endpoints |
-| `service` | Nghiệp vụ job, probe, lifecycle, recovery, progress |
+| `service` | Nghiệp vụ recording + editor (`VideoEditorService` project, `EditorTimelineService` split/reorder, `EditorAssetService`, `VideoEditorRenderService` export) |
 | `media` | Bọc FFmpeg / FFprobe, HTTP headers, SSE hub |
-| `entity` / `repository` | Job persistence |
+| `entity` / `repository` | Job + editor persistence |
 | `dto` | Request / response |
-| `config` | Media, CORS, security headers, OpenAPI, async, disk health |
+| `editor` | Timeline validator, export planner, filter graph, codec policy |
+| `config` | Media, editor, CORS, security headers, OpenAPI groups, async, disk health |
 | `exception` | Error codes + `GlobalExceptionHandler` |
 | `util` | Path resolver, URL redactor, process cleanup |
 
@@ -182,7 +190,80 @@ Một số mã lỗi chính:
 ### 4.12. OpenAPI / Swagger
 
 - Dev: `http://localhost:8081/swagger-ui/index.html`
-- Group endpoints: probe, recordings, health
+- Groups / tags: **Video Editor**, **Recordings**, **Stream Probe**, **Health**
+- Video Editor documents: upload, project, split, merge-next, boundary, output-range, trim, speed, timeline, export, events, download
+- Prod: `springdoc` tắt (`application-prod.yml`)
+
+### 4.13. Video editor (visual reorder)
+
+Domain riêng (`VideoProject` / `VideoAsset` / `VideoSegment` / `VideoExportJob`) — **không** tái sử dụng `LiveDownloadJob`.
+
+**Audio Locked (V1):** audio không phải timeline track. Export audio luôn `original[0 .. outputDurationMillis]`.
+
+| Hành động visual | Audio |
+|---|---|
+| Reorder (`PUT .../timeline`, ví dụ A B C D → C A D B) | **Không** reorder. Cùng prefix gốc, cùng pitch. |
+| Speed (`PUT .../speed`) | **Không** speed / pitch. Chỉ `setpts` trên visual. Không `atempo` / `asetrate`. |
+| Trim cả video (`PUT .../output-range`) | **Có** trim theo output. Ví dụ nguồn 27.167s → 25.000s thì audio ≈ 25s (`atrim`+AAC). |
+
+Output ≈ nguồn → `-map 0:a:0?` (copy nếu codec MP4-safe). Không `-shortest`. Slow-motion làm output dài hơn audio gốc → `OUTPUT_DURATION_EXCEEDS_AUDIO` (V1 không loop / không silence). `durationMillis` = duration nguồn (compat); `sourceDurationMillis` = nguồn; `outputDurationMillis` = tổng visual (sau speed) — FE không đoán output từ `durationMillis`. Segment có `sourceDurationMillis` + `visualDurationMillis` + `canMergeNext` / `canResizeRightBoundary` / `canResizeLeftBoundary` (backend authoritative: chỉ true khi hai visual neighbor VIDEO cùng asset, cùng rate, source-contiguous). Sau reorder `C 20..30 | A 0..10` không kéo shared boundary — `PUT .../boundary` → `INVALID_SEGMENT_BOUNDARY`. Canonical project trim: `PUT .../output-range` (`startMillis`/`endMillis` trên visual output, ví dụ 27.167s → 25.000s); rewrite segment, không lưu output window thứ hai. `PUT .../trim` chỉ mép source clip đầu/cuối. Container MP4 + H.264.
+
+**Concurrency:** `SELECT … FOR UPDATE` trên `video_project` khi mutate timeline (split + resize không race positions). Optional `timelineVersion` (body JSON; query trên `merge-next`/`reset`) phải khớp `project.timelineVersion` — lệch → `TIMELINE_CONFLICT` (409). JPA `@Version` cột `timeline_version` (Flyway V11). Bỏ field thì skip check (compat).
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `GET` | `/api/v1/editor/options` | Preset export (fps/resolution/codec/quality). `keepOriginalAudio` luôn true |
+| `POST` | `/api/v1/editor/projects` | Upload MP4 (`multipart` `file`, optional `name`) |
+| `POST` | `/api/v1/editor/projects/from-recording/{recordingId}` | Import recording `COMPLETED` (hardlink, fallback copy) |
+| `GET` | `/api/v1/editor/projects` | List |
+| `GET` | `/api/v1/editor/projects/{id}` | Chi tiết project + timeline + export |
+| `POST` | `/api/v1/editor/projects/{id}/segments/{segmentId}/split` | Split VIDEO tại `atMillis` |
+| `POST` | `/api/v1/editor/projects/{id}/segments/{segmentId}/merge-next` | Undo split: nối với clip kế tiếp (cùng source cut, cùng rate) |
+| `PUT` | `/api/v1/editor/projects/{id}/segments/{segmentId}/boundary` | Kéo điểm cắt chung (`boundaryMillis`) — chỉ khi `canResizeRightBoundary` |
+| `PUT` | `/api/v1/editor/projects/{id}/output-range` | Trim cả project trên visual output (`startMillis`/`endMillis`; 27.167s → 25.000s). Audio trim theo output |
+| `PUT` | `/api/v1/editor/projects/{id}/segments/{segmentId}/trim` | Trim mép đầu clip đầu / mép cuối clip cuối |
+| `PUT` | `/api/v1/editor/projects/{id}/segments/{segmentId}/speed` | Visual playback rate (whitelist 0.25–4.0). **Không** speed audio |
+| `POST` | `/api/v1/editor/projects/{id}/segments/{segmentId}/reset` | `playbackRate → 1.0`; IMAGE có source slot → VIDEO gốc. Không un-trim (không lưu original bounds) |
+| `PUT` | `/api/v1/editor/projects/{id}/timeline` | Reorder `segmentIds` (đủ mọi id, không trùng). **Không** reorder audio |
+| `POST` | `/api/v1/editor/projects/{id}/assets/images` | Upload JPEG/PNG/WEBP (Phase 1B, `EDITOR_IMAGE_SEGMENTS_ENABLED`) |
+| `PUT` | `/api/v1/editor/projects/{id}/segments/{segmentId}/visual` | Thay visual bằng IMAGE (duration slot không đổi) |
+| `POST` | `/api/v1/editor/projects/{id}/exports` | Start export (`202`) |
+| `GET` | `/api/v1/editor/exports/{exportId}/events` | SSE tiến độ export. `durationMillis` / 100% = `outputDurationMillis` (không dùng source; 27s trim còn 25s → 100% tại 25s) |
+| `GET` | `/api/v1/editor/projects/{id}/events` | SSE theo project (export mới nhất) |
+| `GET` | `/api/v1/editor/exports/{exportId}/file` | Download MP4 khi `COMPLETED` |
+| `POST` | `/api/v1/editor/exports/{exportId}/cancel` | Hủy export (FFmpeg `q` rồi destroy) |
+| `DELETE` | `/api/v1/editor/projects/{id}` | Soft-delete (chặn khi export đang chạy) |
+
+Path param mặc định `{id}`; endpoint theo export dùng `{exportId}`.
+
+**Export status:** `CREATED` → `PREPARING` → `RENDERING` → `FINALIZING` → `COMPLETED` \| `FAILED` \| `CANCELLED`. Mutate timeline khi export active → `EXPORT_ALREADY_RUNNING` (409).
+
+**FFmpeg:** ProcessBuilder argv (không shell). Filter visual được build trong `VisualReorderFilterGraph` (không ghép string ở controller/service): VIDEO `trim` → reset PTS → `setpts` speed → normalize canvas/FPS khi có plan; IMAGE chỉ loop `-t` duration slot (không `playbackRate`); `concat=v=1:a=0`. Audio locked: `atrim=start=0:end=<outputDuration>` + `asetpts` + AAC khi output ngắn hơn nguồn; output ≈ nguồn thì `-map 0:a:0?` (copy nếu MP4-safe). Không `-c:a copy` khi đã dùng audio filter. Timeout `EDITOR_EXPORT_TIMEOUT_MINUTES`. Concurrent cap `MAX_CONCURRENT_EDITOR_EXPORTS` (HTTP 429).
+
+**Upload limit:** nguồn MP4 `EDITOR_MAX_UPLOAD_BYTES` (mặc định 512 MiB) — Spring multipart + Tomcat form size. IMAGE `EDITOR_MAX_IMAGE_UPLOAD_BYTES` (20 MiB). Magic-byte MP4/JPEG/PNG/WEBP.
+
+**Storage:** `EDITOR_STORAGE_DIRECTORY` (mặc định `{recordings}/editor`). File tên UUID; path traversal bị từ chối. Delete chỉ xóa file editor; recording original không bị xóa (hardlink = unlink entry editor).
+
+### 4.14. Logging editor
+
+INFO: `projectId`, `exportId`, status transition (`from`/`to`), progress summary (throttled `PROGRESS_PERSIST_INTERVAL_SECONDS`), duration, input metadata (WxH/fps/codec), export settings.
+
+Không log INFO: filename/path gốc, multipart bytes, token URL, FFmpeg argv / `-filter_complex`, stderr từng frame. SSE UI vẫn nhận progress mỗi tick; log server không spam frame.
+
+### 4.15. Acceptance editor (demo)
+
+| Case | Kỳ vọng | API |
+|---|---|---|
+| 1 Undo split | `A` → split → `A1\|A2` → merge-next → `A` | `POST .../split` rồi `POST .../merge-next` |
+| 2 Resize cut | `A 0..5 \| B 5..10` → boundary 6s → `A 0..6 \| B 6..10` | `PUT .../boundary` `{ "boundaryMillis": 6000 }` |
+| 3 Trim whole video | nguồn 27.167s → output-range 25s → export video **và** audio ≈ 25s | `PUT .../output-range` rồi `POST .../exports` |
+| 4 Visual speed | clip 10s → 2x → visual ≈ 5s; **audio không 2x** | `PUT .../speed` `{ "playbackRate": 2.0 }` |
+| 5 Reorder | `A B C D` → `C A D B` vẫn chạy; audio prefix gốc | `PUT .../timeline` |
+| 6 IMAGE replace | thay visual IMAGE (nếu `EDITOR_IMAGE_SEGMENTS_ENABLED`) | `POST .../assets/images` + `PUT .../visual` |
+| 7 Tests | `.\mvnw.cmd test` pass | |
+| 8 Livestream | probe / recordings / SSE recording không regression | `/api/v1/streams/probe`, `/api/v1/recordings` |
+
+Curl chi tiết: [README.md — Editor acceptance](../README.md#editor-acceptance-curl).
 
 ---
 
@@ -192,7 +273,8 @@ Một số mã lỗi chính:
 live-downloader/
 ├── README.md                 # Hướng dẫn chạy local + API overview
 ├── docs/DEPLOYMENT.md        # Deploy production
-├── doc/CAC_PHAN_DA_LAM.md    # Tài liệu này
+├── doc/CAC_PHAN_DA_LAM.md              # Tài liệu này
+├── doc/2026-08-14-VIDEO-EDITOR-V1.md   # Nhật ký prompt editor 14/08/2026
 ├── docker-compose.yml        # PostgreSQL local
 ├── .env.example
 └── src/main/java/.../livedownloader/
@@ -216,13 +298,17 @@ live-downloader/
 4. Theo dõi: `GET /api/v1/recordings/{id}/events` hoặc poll `GET /api/v1/recordings/{id}`.
 5. Dừng: `POST /api/v1/recordings/{id}/stop`.
 6. Tải MP4: `GET /api/v1/recordings/{id}/file` khi status = `COMPLETED`.
+7. Editor: `POST /api/v1/editor/projects` (upload) hoặc `/from-recording/{id}` → split / merge-next / boundary / output-range / speed / reorder → `POST .../exports` → SSE `/exports/{exportId}/events` (100% theo `outputDurationMillis`) → download `/exports/{exportId}/file`.
+
+Hoặc mở Swagger group **Video Editor**: `http://localhost:8081/swagger-ui/index.html`.
 
 ---
 
 ## 7. Kiểm thử đã có
 
-- Unit / MockMvc: controller, service, exception handler, URL redactor, security headers, media classifier, …
-- Integration: Flyway migration (Testcontainers Postgres), FFmpeg synthetic media IT
+- Unit / MockMvc: controller, service, exception handler, URL redactor, security headers, media classifier, editor validators (duration/split/reorder), export planner, filter graph, path resolver, export status, error mapping
+- Controller MockMvc editor: upload, get project, split, merge-next, boundary, output-range, speed, reorder, IMAGE replace, export, invalid request, download not ready
+- Integration: Flyway (Testcontainers Postgres), FFmpeg synthetic remux IT, FFmpeg visual-reorder IT (CADB reorder; 27.167s → 25s trim video+audio; skip nếu thiếu ffmpeg/ffprobe)
 - Profile test: `application-test.yml`
 
 ---
@@ -232,6 +318,7 @@ live-downloader/
 - Backend **không** tự lấy stream URL từ TikTok/platform — user phải cung cấp URL còn hiệu lực.
 - Token CDN hết hạn → probe/record fail; cần URL mới.
 - Restart app giữa lúc đang ghi → job `INTERRUPTED`, không resume tự động.
+- Restart app giữa lúc đang export editor → job export `FAILED` (process FFmpeg không sống sót JVM).
 - Chỉ dùng với URL bạn được phép truy cập / ghi lại.
 
 ---

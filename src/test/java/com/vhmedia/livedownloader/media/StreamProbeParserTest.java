@@ -60,6 +60,7 @@ class StreamProbeParserTest {
 		assertThat(result.getAudioCodec()).isEqualTo("aac");
 		assertThat(result.getAudioSampleRate()).isEqualTo(44100);
 		assertThat(result.getAudioChannels()).isEqualTo(2);
+		assertThat(result.getDurationMillis()).isNull();
 	}
 
 	@Test
@@ -200,5 +201,63 @@ class StreamProbeParserTest {
 		assertThat(StreamProbeParser.parseFrameRate("N/A")).isNull();
 		assertThat(StreamProbeParser.parseFrameRate("abc/def")).isNull();
 		assertThat(StreamProbeParser.parseFrameRate("29.97")).isCloseTo(29.97d, within(0.0001d));
+	}
+
+	@Test
+	void parsesFormatDurationIntoMillis() {
+		String json = """
+				{
+				  "streams": [
+				    {
+				      "codec_name": "h264",
+				      "codec_type": "video",
+				      "width": 640,
+				      "height": 360,
+				      "avg_frame_rate": "30/1"
+				    }
+				  ],
+				  "format": { "format_name": "mp4", "duration": "4.250000" }
+				}
+				""";
+
+		StreamProbeResult result = parser.parse(json);
+
+		assertThat(result.getDurationMillis()).isEqualTo(4250L);
+		assertThat(StreamProbeParser.parseDurationMillis(null)).isNull();
+		assertThat(StreamProbeParser.parseDurationMillis("N/A")).isNull();
+		assertThat(StreamProbeParser.parseDurationMillis("abc")).isNull();
+		assertThat(StreamProbeParser.parseDurationMillis("00:00:25.000000")).isEqualTo(25_000L);
+	}
+
+	@Test
+	void parsesVideoAndAudioStreamDurations() {
+		String json = """
+				{
+				  "streams": [
+				    {
+				      "codec_name": "h264",
+				      "codec_type": "video",
+				      "width": 640,
+				      "height": 360,
+				      "avg_frame_rate": "25/1",
+				      "duration": "25.000000"
+				    },
+				    {
+				      "codec_name": "aac",
+				      "codec_type": "audio",
+				      "sample_rate": "44100",
+				      "channels": 2,
+				      "tags": { "DURATION": "00:00:25.012000" }
+				    }
+				  ],
+				  "format": { "format_name": "mp4", "duration": "25.000000" }
+				}
+				""";
+
+		StreamProbeResult result = parser.parse(json);
+
+		assertThat(result.getDurationMillis()).isEqualTo(25_000L);
+		assertThat(result.getVideoDurationMillis()).isEqualTo(25_000L);
+		assertThat(result.getAudioDurationMillis()).isEqualTo(25_012L);
 	}
 }

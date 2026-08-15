@@ -22,13 +22,14 @@ Related files:
             ▼
 [ Spring Boot :8080 ] ── Hikari ──► [ PostgreSQL ]
             │
-            ├── FFmpeg / FFprobe (host PATH or absolute paths)
-            └── RECORDINGS_DIRECTORY (dedicated volume)
+            ├── FFmpeg / FFprobe (host PATH or absolute paths; libx264 + AAC for editor export)
+            ├── RECORDINGS_DIRECTORY (dedicated volume)
+            └── EDITOR_STORAGE_DIRECTORY (editor source/assets/exports; default `{recordings}/editor`)
 ```
 
 - Job metadata lives in **PostgreSQL** (Flyway-managed schema).
 - Media bytes live on a **writable volume**; paths never come from user input.
-- Active FFmpeg processes are **in-memory**; on unclean kill, startup recovery marks jobs `INTERRUPTED`.
+- Active FFmpeg processes are **in-memory**; on unclean kill, startup recovery marks recording jobs `INTERRUPTED` and active editor exports `FAILED`.
 
 ---
 
@@ -38,7 +39,7 @@ Related files:
 | --- | --- |
 | JDK 21 | Temurin or equivalent |
 | PostgreSQL 16+ | Managed or self-hosted; durable storage |
-| FFmpeg + FFprobe | Same major version pair; verify with `-version` |
+| FFmpeg + FFprobe | Same major version pair; `libx264` + AAC required for editor export; verify with `-version` |
 | Disk | Dedicated volume for recordings; monitor free space |
 | OS user | Non-root service account that can write the recordings dir |
 | Reverse proxy | TLS termination, rate limits, optional basic auth for `/actuator` |
@@ -77,6 +78,8 @@ Required for `prod`:
 | `FFMPEG_PATH` | recommended | absolute path |
 | `FFPROBE_PATH` | recommended | absolute path |
 | `RECORDINGS_DIRECTORY` | recommended | e.g. `/var/lib/live-downloader/recordings` |
+| `EDITOR_STORAGE_DIRECTORY` | recommended | e.g. `/var/lib/live-downloader/editor` |
+| `MAX_CONCURRENT_EDITOR_EXPORTS` | recommended | JVM-local FFmpeg export cap |
 
 ---
 
@@ -106,9 +109,9 @@ Hikari pool (prod defaults / overridable via env):
 ## 5. Storage permissions and capacity
 
 ```bash
-sudo mkdir -p /var/lib/live-downloader/recordings
+sudo mkdir -p /var/lib/live-downloader/recordings /var/lib/live-downloader/editor
 sudo chown -R livedl:livedl /var/lib/live-downloader
-sudo chmod 750 /var/lib/live-downloader/recordings
+sudo chmod 750 /var/lib/live-downloader/recordings /var/lib/live-downloader/editor
 ```
 
 At startup the app:
@@ -136,6 +139,8 @@ Ops recommendations:
 - `SecurityHeadersFilter` adds `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, CSP `default-src 'none'`, etc.
 - **No authentication** ships in-app yet — put the API behind a private network, VPN, or reverse-proxy auth.
 - OpenAPI/Swagger UI is **disabled** in `prod`.
+- Editor source uploads are capped by `EDITOR_MAX_UPLOAD_BYTES` (default 512 MiB; Spring multipart + Tomcat `max-http-form-post-size`). IMAGE assets use `EDITOR_MAX_IMAGE_UPLOAD_BYTES` (20 MiB).
+- Editor exports are capped separately (`MAX_CONCURRENT_EDITOR_EXPORTS`). **Audio Locked:** original `[0..outputDuration]`. Reorder/speed do not move or pitch audio; `output-range` trims audio to the new length.
 
 ---
 
@@ -200,6 +205,8 @@ Set `SHUTDOWN_TIMEOUT` ≥ `STOP_TIMEOUT_SECONDS` + remux buffer if you drain re
 Prod: `root=WARN`, `com.vhmedia.livedownloader=INFO`, timestamped console pattern.
 
 - Stream URL query strings are redacted (`?[REDACTED]`) in logs and stored errors.
+- Editor INFO: `projectId`, `exportId`, status transitions, throttled progress summaries, source metadata (duration/WxH/fps/codecs), export settings. Not per FFmpeg frame (`PROGRESS_PERSIST_INTERVAL_SECONDS`).
+- Do not log original filenames, filter graphs, FFmpeg argv, or stderr at INFO.
 - Do not enable Hibernate SQL logging in prod.
 - Ship console/journald to your log aggregator; avoid logging `.env` contents.
 
@@ -263,6 +270,7 @@ Restart=on-failure
 - [ ] Backups for PostgreSQL + recordings volume
 - [ ] Disk alerts configured
 - [ ] Manual E2E checklist smoke (probe, record, stop, download, delete)
+- [ ] Editor: upload/import, split, merge-next, boundary, output-range, speed, reorder, IMAGE replace, export, SSE 100% at output duration, download
 
 ---
 

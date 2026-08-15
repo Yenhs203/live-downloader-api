@@ -20,4 +20,17 @@ public class StreamProbeResult {
 	String audioCodec;
 	Integer audioSampleRate;
 	Integer audioChannels;
+
+	/**
+	 * Container / format duration from ffprobe {@code format.duration}.
+	 */
+	Long durationMillis;
+	/**
+	 * First video stream duration (stream {@code duration} or {@code tags.DURATION}).
+	 */
+	Long videoDurationMillis;
+	/**
+	 * First audio stream duration (stream {@code duration} or {@code tags.DURATION}).
+	 */
+	Long audioDurationMillis;
 }

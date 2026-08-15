@@ -35,6 +35,12 @@ app:
     sse-timeout-seconds: 1800
     min-free-disk-bytes: 0
     validate-executables-on-startup: false
+  editor:
+    storage-directory: ${EDITOR_STORAGE_DIRECTORY:./recordings-dev/editor}
+    max-concurrent-exports: 1
+    delete-temp-after-export: true
+    image-segments-enabled: ${EDITOR_IMAGE_SEGMENTS_ENABLED:true}
+    preview-enabled: false
   security:
     block-private-stream-addresses: false
     security-headers-enabled: true
